@@ -47,16 +47,17 @@ li>div:first-child{flex:1;min-width:0}
 <ul id="l"></ul>
 </main>
 <div id="ov"><div id="sh">
- <h2 id="et"></h2>
- <input id="en" placeholder="Naziv">
- <input id="er" list="rl" placeholder="Regija">
+ <h2 id="et">Uredi unos</h2>
  <input id="ed" list="dl" placeholder="Država">
+ <input id="er" list="rl" placeholder="Regija">
+ <input id="ep" placeholder="Provincija (neobavezno)">
+ <input id="eg" placeholder="Grad (neobavezno)">
  <div class="m" id="em"></div>
  <div class="row"><button id="es">Spremi</button><button class="d" id="edl">Obriši</button><button class="g" id="ec">Zatvori</button></div>
 </div></div>
 <script>
 // ====== POSTAVKE ======
-const API = "https://script.google.com/macros/s/AKfycbwleMmsh32Onuo1PxTxZPs0jB5vi2Ji8I3SY-YVrXakBv6h1odAwQsXg_Uhoc1TzHbW/exec";   // npr. https://script.google.com/macros/s/.../exec
+const API = "https://script.google.com/macros/s/AKfycbwUmcQ-g9LRfxta27cj4Gf2nXBGhIMr6eT5pKm48ZIbXS_g8TLouw36fZCj4aCNEJGg/exec";   // npr. https://script.google.com/macros/s/.../exec
 const KEY = "554550";                 // ista kao u Code.gs
 // ======================
 const $=id=>document.getElementById(id);
@@ -64,14 +65,13 @@ const f=s=>String(s).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase
 const esc=s=>String(s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
 let rows=JSON.parse(localStorage.getItem("rows")||"[]");   // [država, regija, provincija, grad, redak]
 let list=[],cur=null;
-function entries(){const o=[];
- for(const[d,r,p,g,row]of rows)for(const[n,t,field]of[[g,"Grad","grad"],[p,"Provincija","provincija"]]){
-  if(n)o.push({d,r,n,t,field,row,k:f([d,r,n,t].join(" "))})}
- return o}
+function entries(){return rows.map(([d,r,p,g,row])=>({d,r,p:p||"",g:g||"",row,k:f([d,r,p,g].join(" "))}))}
 function render(){
  const w=f($("q").value.trim()).split(/\s+/).filter(Boolean);
- list=entries().filter(o=>w.every(t=>o.k.includes(t))).sort((a,b)=>a.n.localeCompare(b.n,"hr")).slice(0,300);
- $("l").innerHTML=list.map((o,i)=>`<li><div><div class="n">${esc(o.n)}</div><div class="t">${o.t}</div></div><div class="r">${esc(o.r)}<br>${esc(o.d)}</div>${o.row?`<button class="i" data-i="${i}" aria-label="Uredi">i</button>`:""}</li>`).join("");
+ list=entries().filter(o=>w.every(t=>o.k.includes(t))).sort((a,b)=>(a.g||a.p).localeCompare(b.g||b.p,"hr")).slice(0,300);
+ $("l").innerHTML=list.map((o,i)=>{
+  const title=o.g||o.p,sub=o.g?(o.p?"Grad \u00b7 prov. "+o.p:"Grad"):"Provincija";
+  return `<li><div><div class="n">${esc(title)}</div><div class="t">${esc(sub)}</div></div><div class="r">${esc(o.r)}<br>${esc(o.d)}</div>${o.row?`<button class="i" data-i="${i}" aria-label="Uredi">i</button>`:""}</li>`}).join("");
  $("c").textContent=list.length+" rezultata";
  $("dl").innerHTML=[...new Set(rows.map(r=>r[0]))].map(x=>`<option value="${esc(x)}">`).join("");
  $("rl").innerHTML=[...new Set(rows.map(r=>r[1]))].map(x=>`<option value="${esc(x)}">`).join("")}
@@ -92,23 +92,23 @@ $("sv").onclick=async()=>{
  }catch(e){$("m").textContent="Nije uspjelo spremanje. Provjeri internet i postavke."}};
 // uređivanje / brisanje
 $("l").onclick=e=>{const b=e.target.closest(".i");if(!b)return;
- cur=list[+b.dataset.i];$("et").textContent=cur.t;
- $("en").value=cur.n;$("er").value=cur.r;$("ed").value=cur.d;
- $("em").textContent="";$("edl").textContent="Obriši";$("edl").classList.remove("on");$("ov").classList.add("o")};
+ cur=list[+b.dataset.i];
+ $("ed").value=cur.d;$("er").value=cur.r;$("ep").value=cur.p;$("eg").value=cur.g;
+ $("em").textContent="";$("edl").textContent="Obri\u0161i";$("edl").classList.remove("on");$("ov").classList.add("o")};
 const close=()=>{$("ov").classList.remove("o");cur=null};
 $("ec").onclick=close;
 $("ov").onclick=e=>{if(e.target.id==="ov")close()};
 $("es").onclick=async()=>{
- const v={action:"edit",row:cur.row,field:cur.field,old:cur.n,name:$("en").value.trim(),regija:$("er").value.trim(),drzava:$("ed").value.trim()};
- if(!v.name||!v.regija||!v.drzava){$("em").textContent="Sva polja moraju biti popunjena.";return}
+ const v={action:"edit",row:cur.row,oldP:cur.p,oldG:cur.g,drzava:$("ed").value.trim(),regija:$("er").value.trim(),provincija:$("ep").value.trim(),grad:$("eg").value.trim()};
+ if(!v.drzava||!v.regija||!(v.provincija||v.grad)){$("em").textContent="Upi\u0161i dr\u017eavu, regiju i barem provinciju ili grad.";return}
  $("em").textContent="Spremam...";
- try{const j=await post(v);if(!j.ok){$("em").textContent="Greška: "+j.error;return}
+ try{const j=await post(v);if(!j.ok){$("em").textContent="Gre\u0161ka: "+j.error;return}
   close();await load()}catch(e){$("em").textContent="Nije uspjelo. Provjeri internet."}};
 $("edl").onclick=async()=>{
  if(!$("edl").classList.contains("on")){$("edl").classList.add("on");$("edl").textContent="Potvrdi brisanje";return}
- $("em").textContent="Brišem...";
- try{const j=await post({action:"delete",row:cur.row,field:cur.field,old:cur.n});
-  if(!j.ok){$("em").textContent="Greška: "+j.error;return}
+ $("em").textContent="Bri\u0161em...";
+ try{const j=await post({action:"delete",row:cur.row,oldP:cur.p,oldG:cur.g});
+  if(!j.ok){$("em").textContent="Gre\u0161ka: "+j.error;return}
   close();await load()}catch(e){$("em").textContent="Nije uspjelo. Provjeri internet."}};
 $("q").addEventListener("input",render);
 render();load();
