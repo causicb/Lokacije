@@ -7,6 +7,12 @@
 :root{--bg:#f6f5f3;--fg:#1d2330;--mut:#6b7280;--card:#fff;--line:#e3e1dc;--acc:#b3262e}
 @media (prefers-color-scheme:dark){:root{--bg:#14171d;--fg:#eceef2;--mut:#98a0ae;--card:#1d222b;--line:#2c3340;--acc:#ef6b73}}
 *{box-sizing:border-box}
+html,body{overscroll-behavior-y:contain}
+#ptr{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 6px);width:38px;height:38px;margin-left:-19px;border-radius:50%;background:var(--card);box-shadow:0 3px 12px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;z-index:40;opacity:0;transform:translateY(-60px);pointer-events:none}
+#ptr.snap{transition:transform .2s,opacity .2s}
+#ptr .sp{width:20px;height:20px;border:3px solid var(--line);border-top-color:var(--acc);border-radius:50%}
+#ptr.spin .sp{animation:rot .7s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
 main{max-width:560px;margin:0 auto;padding:20px 16px 40px}
 h1{display:flex;align-items:center;gap:10px;font-size:26px;margin:4px 0 14px;cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -48,7 +54,7 @@ li>div:first-child{flex:1;min-width:0}
  <label for="r">Regija</label><input id="r" list="rl">
  <label for="p">Provincija (neobavezno)</label><input id="p">
  <label for="g">Grad (neobavezno)</label><input id="g">
-<button id="sv">Spremi</button>
+<div class="row"><button id="sv">Spremi</button><button class="g" id="sc">Odustani</button></div>
  <datalist id="dl"></datalist><datalist id="rl"></datalist>
 </div>
 <div class="s"><input id="q" type="search" placeholder="Upiši grad, provinciju ili regiju" autocomplete="off">
@@ -63,12 +69,13 @@ li>div:first-child{flex:1;min-width:0}
  <label for="eg">Grad (neobavezno)</label><input id="eg">
  <div class="row"><button id="es">Spremi</button><button class="d" id="edl">Obriši</button><button class="g" id="ec">Zatvori</button></div>
 </div></div>
+<div id="ptr"><div class="sp"></div></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="cf"><div id="cb"><h3 id="ch"></h3><div id="cs"></div>
  <div class="row"><button id="cok">Da</button><button class="g" id="cno">Odustani</button></div></div></div>
 <script>
 // ====== POSTAVKE ======
-const API = "https://script.google.com/macros/s/AKfycbyxIl_B8ohE7lY5wUUAs1In5S9o0F_7sr59zOyOy9gBHwfQlHcYPN9zTmsjl_q0nfNA/exec";   // npr. https://script.google.com/macros/s/.../exec
+const API = "https://script.google.com/macros/s/AKfycbzdyXsnQcjojAhBkOeM21_WEQdeUyNUMWkfbDjReOgOe3UIo4_IpQ2dVnXjfVGVltLv/exec";   // npr. https://script.google.com/macros/s/.../exec
 const KEY = "554550";                 // ista kao u Code.gs
 // ======================
 const $=id=>document.getElementById(id);
@@ -107,13 +114,18 @@ function call(params,ms){return new Promise((res,rej)=>{
  sc.onerror=()=>{if(!done){clean();rej(new Error("net"))}};
  sc.src=API+(API.includes("?")?"&":"?")+new URLSearchParams({...params,callback:cb,_:Date.now()});
  document.head.appendChild(sc)})}
+const ptr=$("ptr"),sp=ptr.firstChild;let spinning=false,t0=0;
+function spin(on){
+ if(on){spinning=true;t0=Date.now();ptr.classList.add("snap","spin");ptr.style.opacity=1;ptr.style.transform="translateY(10px)"}
+ else{const w=Math.max(0,600-(Date.now()-t0));setTimeout(()=>{spinning=false;ptr.classList.remove("spin");ptr.style.opacity=0;ptr.style.transform="translateY(-60px)"},w)}}
 async function load(){
+ spin(true);
  let ok=false;
  try{const j=await call({},8000);if(j&&j.ok){rows=j.rows;ok=true}}catch(e){}
  if(!ok){try{const j=await(await fetch(API)).json();if(j&&j.ok){rows=j.rows;ok=true}}catch(e){}}
  if(ok)localStorage.setItem("rows",JSON.stringify(rows));
  else toast(rows.length?"Offline \u2013 prikazani su spremljeni podaci":"Ne mogu dohvatiti podatke. Provjeri je li nova skripta objavljena.","err",6000);
- render()}
+ render();spin(false);return ok}
 const post=v=>call({p:JSON.stringify({...v,key:KEY})});
 $("tg").onclick=()=>$("f").classList.toggle("o");
 function home(){
@@ -122,6 +134,7 @@ function home(){
  render();window.scrollTo({top:0,behavior:"smooth"});refresh()}
 $("home").onclick=home;
 $("home").onkeydown=e=>{if(e.key==="Enter"||e.key===" ")home()};
+$("sc").onclick=()=>{$("f").classList.remove("o");$("r").value=$("p").value=$("g").value=""};
 $("sv").onclick=async()=>{
  const v={action:"add",drzava:$("d").value.trim(),regija:$("r").value.trim(),provincija:$("p").value.trim(),grad:$("g").value.trim()};
  if(!v.drzava||!v.regija||!(v.provincija||v.grad)){toast("Upi\u0161i dr\u017eavu, regiju i barem provinciju ili grad.","err");return}
@@ -152,11 +165,26 @@ $("edl").onclick=async()=>{
  try{const j=await post({action:"delete",row:cur.row,oldP:cur.p,oldG:cur.g});
   if(!j.ok){toast("Gre\u0161ka: "+j.error,"err");return}
   close();toast("Unos je obrisan \u2713");await load()}catch(e){toast("Veza nije uspjela. Provjeri je li unos obrisan u Sheetu.","err",6000);load()}};
+let y0=null,pull=0;
+const modalOpen=()=>$("ov").classList.contains("o")||$("cf").classList.contains("o");
+document.addEventListener("touchstart",e=>{y0=(window.scrollY<=0&&!modalOpen()&&!spinning)?e.touches[0].clientY:null;pull=0;ptr.classList.remove("snap")},{passive:true});
+document.addEventListener("touchmove",e=>{
+ if(y0===null)return;
+ pull=e.touches[0].clientY-y0;
+ if(pull>0&&window.scrollY<=0){
+  const d=Math.min(pull,140)*0.55;
+  ptr.style.opacity=Math.min(pull/60,1);ptr.style.transform="translateY("+(d-40)+"px)";
+  sp.style.transform="rotate("+pull*3+"deg)"}
+ else{pull=0}},{passive:true});
+document.addEventListener("touchend",()=>{
+ if(y0===null)return;y0=null;ptr.classList.add("snap");sp.style.transform="";
+ if(pull>75){refresh().then(ok=>{if(ok)toast("Osvje\u017eeno \u2713","ok",1500)})}
+ else{ptr.style.opacity=0;ptr.style.transform="translateY(-60px)"}pull=0});
 $("q").addEventListener("input",render);
 render();load();
 // automatsko osvježavanje: kad se vratiš u app (min. 1 min razmaka) i svakih sat vremena
 let last=Date.now();
-const refresh=()=>{last=Date.now();load()};
+const refresh=()=>{last=Date.now();return load()};
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&Date.now()-last>60000)refresh()});
 window.addEventListener("pageshow",()=>{if(Date.now()-last>60000)refresh()});
 setInterval(()=>{if(!document.hidden)refresh()},3600000);
