@@ -24,8 +24,8 @@ input:focus{border-color:var(--acc)}
 button{padding:11px 16px;border:0;border-radius:12px;background:var(--acc);color:#fff;font-weight:600}
 button.g{background:none;color:var(--acc);border:2px solid var(--acc)}
 button.d{background:none;color:var(--acc);border:2px solid var(--acc)}
-#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 12px);transform:translate(-50%,-140%);max-width:calc(100% - 28px);padding:12px 18px;border-radius:12px;background:#1f7a4d;color:#fff;font-weight:600;font-size:15px;box-shadow:0 6px 20px rgba(0,0,0,.3);z-index:50;transition:transform .25s;pointer-events:none;text-align:center}
-#toast.o{transform:translate(-50%,0)}#toast.err{background:#b3262e}#toast.info{background:#374151}
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 12px);transform:translate(-50%,-20px);max-width:calc(100% - 28px);padding:12px 18px;border-radius:12px;background:#1f7a4d;color:#fff;font-weight:600;font-size:15px;box-shadow:0 6px 20px rgba(0,0,0,.3);z-index:50;opacity:0;visibility:hidden;transition:transform .25s,opacity .25s,visibility .25s;pointer-events:none;text-align:center}
+#toast.o{transform:translate(-50%,0);opacity:1;visibility:visible}#toast.info{background:#374151}#toast.err{background:#111;border:2px solid var(--acc)}
 label{display:block;font-size:13px;font-weight:600;color:var(--mut);margin:0 2px 4px}
 #cf{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:20;align-items:center;justify-content:center;padding:20px}
 #cf.o{display:flex}
@@ -105,7 +105,7 @@ function render(){
  $("dl").innerHTML=[...new Set(rows.map(r=>r[0]))].map(x=>`<option value="${esc(x)}">`).join("");
  $("rl").innerHTML=[...new Set(rows.map(r=>r[1]))].map(x=>`<option value="${esc(x)}">`).join("")}
 let tt;
-function toast(msg,type,ms){const t=$("toast");t.textContent=msg;t.className="o "+(type||"ok");clearTimeout(tt);if(ms!==0)tt=setTimeout(()=>t.className="",ms||3500)}
+function toast(msg,type,ms){const t=$("toast");t.textContent=(type==="err"?"\u26a0 ":"")+msg;t.className="o "+(type||"ok");clearTimeout(tt);if(ms!==0)tt=setTimeout(()=>t.className="",ms||3500)}
 function call(params,ms){return new Promise((res,rej)=>{
  const cb="cb"+Date.now()+Math.floor(Math.random()*1e6),sc=document.createElement("script");let done=false,to;
  const clean=()=>{done=true;delete window[cb];sc.remove();clearTimeout(to)};
@@ -117,15 +117,19 @@ function call(params,ms){return new Promise((res,rej)=>{
 const ptr=$("ptr"),sp=ptr.firstChild;let spinning=false,t0=0;
 function spin(on){
  if(on){spinning=true;t0=Date.now();ptr.classList.add("snap","spin");ptr.style.opacity=1;ptr.style.transform="translateY(10px)"}
- else{const w=Math.max(0,600-(Date.now()-t0));setTimeout(()=>{spinning=false;ptr.classList.remove("spin");ptr.style.opacity=0;ptr.style.transform="translateY(-60px)"},w)}}
-async function load(){
+ else{const w=Math.max(0,350-(Date.now()-t0));setTimeout(()=>{spinning=false;ptr.classList.remove("spin");ptr.style.opacity=0;ptr.style.transform="translateY(-60px)"},w)}}
+let inflight=null;
+const chk=j=>{if(!j||!j.ok)throw 0;return j};
+function load(){
+ if(inflight)return inflight;
  spin(true);
- let ok=false;
- try{const j=await call({},8000);if(j&&j.ok){rows=j.rows;ok=true}}catch(e){}
- if(!ok){try{const j=await(await fetch(API)).json();if(j&&j.ok){rows=j.rows;ok=true}}catch(e){}}
- if(ok)localStorage.setItem("rows",JSON.stringify(rows));
- else toast(rows.length?"Offline \u2013 prikazani su spremljeni podaci":"Ne mogu dohvatiti podatke. Provjeri je li nova skripta objavljena.","err",6000);
- render();spin(false);return ok}
+ inflight=(async()=>{
+  let ok=false;
+  try{const j=await Promise.any([call({},15000).then(chk),fetch(API).then(r=>r.json()).then(chk)]);rows=j.rows;ok=true}catch(e){}
+  if(ok)localStorage.setItem("rows",JSON.stringify(rows));
+  else toast(rows.length?"Offline \u2013 prikazani su spremljeni podaci":"Ne mogu dohvatiti podatke. Provjeri je li nova skripta objavljena.","err",6000);
+  render();spin(false);return ok})().finally(()=>{inflight=null});
+ return inflight}
 const post=v=>call({p:JSON.stringify({...v,key:KEY})});
 $("tg").onclick=()=>$("f").classList.toggle("o");
 function home(){
@@ -142,7 +146,7 @@ $("sv").onclick=async()=>{
  toast("Spremam...","info",0);
  try{const j=await post(v);
   if(!j.ok){toast("Gre\u0161ka: "+j.error,"err");return}
-  $("p").value="";$("g").value="";toast("Unos je spremljen \u2713");await load()
+  $("p").value="";$("g").value="";toast("Unos je spremljen \u2713");rows.push([v.drzava,v.regija,v.provincija,v.grad,0]);render();load()
  }catch(e){toast("Veza nije uspjela. Provjeri je li unos u Sheetu.","err",6000);load()}};
 // uređivanje / brisanje
 $("l").onclick=e=>{const b=e.target.closest(".i");if(!b)return;
@@ -158,13 +162,13 @@ $("es").onclick=async()=>{
  if(!await ask("Spremiti promjene?",v,"Da, spremi"))return;
  toast("Spremam...","info",0);
  try{const j=await post(v);if(!j.ok){toast("Gre\u0161ka: "+j.error,"err");return}
-  close();toast("Promjene su spremljene \u2713");await load()}catch(e){toast("Veza nije uspjela. Provjeri je li promjena u Sheetu.","err",6000);load()}};
+  const t=rows.find(r=>r[4]===v.row);if(t){t[0]=v.drzava;t[1]=v.regija;t[2]=v.provincija;t[3]=v.grad}close();toast("Promjene su spremljene \u2713");render();load()}catch(e){toast("Veza nije uspjela. Provjeri je li promjena u Sheetu.","err",6000);load()}};
 $("edl").onclick=async()=>{
  if(!await ask("Obrisati ovaj unos?",{drzava:cur.d,regija:cur.r,provincija:cur.p,grad:cur.g},"Da, obri\u0161i"))return;
  toast("Bri\u0161em...","info",0);
  try{const j=await post({action:"delete",row:cur.row,oldP:cur.p,oldG:cur.g});
   if(!j.ok){toast("Gre\u0161ka: "+j.error,"err");return}
-  close();toast("Unos je obrisan \u2713");await load()}catch(e){toast("Veza nije uspjela. Provjeri je li unos obrisan u Sheetu.","err",6000);load()}};
+  const rd=cur.row;rows=rows.filter(r=>r[4]!==rd);close();toast("Unos je obrisan \u2713");render();load()}catch(e){toast("Veza nije uspjela. Provjeri je li unos obrisan u Sheetu.","err",6000);load()}};
 let y0=null,pull=0;
 const modalOpen=()=>$("ov").classList.contains("o")||$("cf").classList.contains("o");
 document.addEventListener("touchstart",e=>{y0=(window.scrollY<=0&&!modalOpen()&&!spinning)?e.touches[0].clientY:null;pull=0;ptr.classList.remove("snap")},{passive:true});
